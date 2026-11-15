@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: MPL-2.0
+name: Windows release
+on:
+  push:
+    tags: ['v*', 'V*']
+
+concurrency:
+  group: release-${{ forgejo.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      RELEASE_TAG: ${{ forgejo.ref_name }}
+      FORGEJO_SERVER_URL: ${{ forgejo.server_url }}
+      FORGEJO_REPOSITORY: ${{ forgejo.repository }}
+      EXPECTED_SHA: ${{ forgejo.sha }}
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Check out tagged source
+        uses: https://github.com/actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Ubuntu cross-build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$(id -u)" -eq 0 ]; then
+            apt-get update
+            apt-get install -y --no-install-recommends ca-certificates curl git python3 python3-venv clang llvm lld nsis gnupg
+          else
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends ca-certificates curl git python3 python3-venv clang llvm lld nsis gnupg
+          fi
+      - name: Install pinned Rust and cargo-xwin
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v rustup >/dev/null; then
+            curl --proto '=https' --tlsv1.3 -fsSL https://sh.rustup.rs -o "$RUNNER_TEMP/rustup-init.sh"
+            sh "$RUNNER_TEMP/rustup-init.sh" -y --profile minimal --default-toolchain none
+          fi
+          export PATH="$HOME/.cargo/bin:$PATH"
+          toolchain=$(python3 -c 'import tomllib; print(tomllib.load(open("rust-toolchain.toml", "rb"))["toolchain"]["channel"])')
+          rustup toolchain install "$toolchain" --profile minimal --component rustfmt --component clippy --target x86_64-pc-windows-msvc
+          python3 -m venv "$RUNNER_TEMP/nightlight-tools"
+          "$RUNNER_TEMP/nightlight-tools/bin/pip" install --disable-pip-version-check cargo-xwin==0.23.1
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "$RUNNER_TEMP/nightlight-tools/bin" >> "$GITHUB_PATH"
+      - name: Validate release tooling and derive version
+        run: |
+          python3 -m unittest discover -s build-scripts/windows -p 'test_release.py' -v
+          python3 build-scripts/windows/release.py version
+      - name: Cross-build Windows GUI and installer
+        run: python3 build-scripts/windows/release.py build
+      - name: Sign and verify all release files
+        env:
+          CI_KEY_B64: ${{ secrets.CI_KEY_B64 }}
+          CI_KEY_PASSPHRASE: ${{ secrets.CI_KEY_PASSPHRASE }}
+        run: python3 build-scripts/windows/release.py sign
+      - name: Publish Forgejo release and GitHub mirror
+        env:
+          FORGEJO_TOKEN: ${{ forgejo.token }}
+          GH_KEY: ${{ secrets.GH_KEY }}
+        run: python3 build-scripts/windows/release.py publish

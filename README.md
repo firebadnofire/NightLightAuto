@@ -166,20 +166,33 @@ If needed, install it with:
 rustup toolchain install 1.97.1 --component rustfmt --component clippy --target x86_64-pc-windows-msvc
 ```
 
+Install [NSIS 3](https://nsis.sourceforge.io/) for the default installer output.
+The script finds `makensis.exe` on PATH or in `%ProgramFiles(x86)%\NSIS`.
+
 Normal workflow (Windows PowerShell 5.1 or PowerShell 7, from any directory):
 
 ```powershell
 .\build-scripts\windows\build.ps1
 .\build-scripts\windows\build.ps1 -Debug
 .\build-scripts\windows\build.ps1 -Test -Check
+.\build-scripts\windows\build.ps1 -NoInstaller
+.\build-scripts\windows\build.ps1 -NoPortable
 .\dist\windows\FullscreenNightLight\FullscreenNightLight.exe
 ```
 
 The script builds with locked dependencies, static CRT linkage and embedded GUI
 resources, checks dependency licenses, writes complete dependency notices, and
-produces `dist\windows\FullscreenNightLight-portable.zip`. No Qt or custom DLL is
+produces `dist\windows\FullscreenNightLight-portable.zip` and
+`dist\windows\FullscreenNightLight-<version>-windows-x64-setup.exe` by default.
+Use `-NoInstaller` and/or `-NoPortable` to skip outputs. Both packaging paths share
+the same native application payload. No Qt or custom DLL is
 required; standard Windows system DLLs remain prerequisites. Debug and release
 builds share distribution paths, so the last successful build determines contents.
+
+Forgejo CI cross-builds releases on `ubuntu-latest` for `v*` and `V*` tags,
+derives the application version from the tag, signs all release payloads and
+SHA256SUMS with OpenPGP, and mirrors releases to GitHub. The local and CI installer
+use the same NSIS definition. See [release setup and signing](docs/RELEASING.md).
 
 ```powershell
 .\build-scripts\windows\clean.ps1 -WhatIf

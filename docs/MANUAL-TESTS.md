@@ -22,6 +22,9 @@ the end. `--read-only` is suitable for GUI inspection without Night Light writes
   license display, and Windows Night Light Settings shortcut.
 - Close hides by default; tray Open/Settings/double-click restore/focus. A second
   launch focuses the first process. `--startup` shows no window. Exit terminates.
+  Click the actual title-bar X and also test Alt+F4, rather than only sending
+  WM_CLOSE directly. After each close, confirm the same process/PID remains alive
+  and reopening restores that instance; a disappearing window alone is insufficient.
 - Disable close-to-tray: close exits. Enable start-minimized: manual launch hides.
 - Restart Explorer and confirm tray recreation. Confirm all tray/menu actions.
 - With explicit authorization, toggle startup; inspect exactly one quoted HKCU Run

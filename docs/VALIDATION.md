@@ -1,5 +1,54 @@
 # Validation record
 
+## Close-to-tray regression
+
+Computer Use reproduced the installed app terminating when the actual title-bar X
+was clicked, despite the checked close-to-tray option. The earlier close-to-tray
+acceptance claim missed this path and was insufficient.
+
+Default Win32 processing of nonclient/system commands synchronously sends WM_CLOSE.
+The GUI previously held a mutable RefCell borrow during that default processing,
+so the nested close fell through to DefWindowProc and destroyed the window. Default
+messages now bypass the borrow; a busy close is deferred rather than destroying it.
+
+The rebuilt release was tested with Computer Use and an isolated read-only profile.
+The actual X and Alt+F4 both hid the window while preserving the same live PID;
+reopening restored that instance. The 37 Rust tests, formatting and strict Clippy
+passed, and the installer and portable package were rebuilt. No real Night Light
+or startup preference was changed by the read-only regression tests. The installed
+copy requires updating using the rebuilt installer.
+
+## Release CI additions
+
+- Forgejo workflow YAML parses and selects `ubuntu-latest` for both `v*` and `V*`.
+- An isolated tagged `V0.2.7` Git fixture completed the Ubuntu/WSL MSVC cross-build
+  and NSIS installer compilation, portable ZIP, dependency notices and source ZIP.
+  Windows reads both FileVersion and ProductVersion as `0.2.7`. Source archive
+  Cargo.toml/Cargo.lock contain that same derived version. The main checkout's
+  Cargo version and Git tags were not changed by this fixture.
+- 7-Zip recognized the generated setup as NSIS 3 Unicode and passed its complete
+  archive integrity test, including the GUI payload, documentation and uninstaller.
+- All five actual fixture release files, including SHA256SUMS, were signed and
+  verified using a disposable GPG key. No production secrets were used.
+- 14 release-tool regression tests pass: native-path NSIS compilation with spaces,
+  version validation and tag/SHA consistency,
+  repeatable version derivation, lowercase dependency licenses, unreviewed-license
+  rejection, real GPG signing/checksums/tampering, credential host restrictions,
+  non-forced tag push, draft uploads and public-asset overwrite prevention.
+- Existing 37 Rust tests and strict Clippy still pass. Windows builds with
+  `-NoInstaller` and `-NoPortable` work, including PowerShell 5.1.
+
+The cross-linker reported LNK4099 warnings because Microsoft's static libraries
+refer to PDB files absent from the downloaded SDK. Compilation succeeded; these
+debug-symbol warnings were not hidden. The native Windows makensis invocation
+was subsequently verified using the default
+PowerShell 5.1 build from `build-scripts/windows`. A mixed-separator file lookup
+failure was fixed by consistently using NSIS backslashes in the shared template;
+both native Windows and Ubuntu compilers now succeed. The native setup also passes
+7-Zip archive verification. Installer install/upgrade/uninstall remain untested.
+Actual Forgejo execution, production-key signing and both release API
+uploads await a real release tag; no public release or tag was pushed during tests.
+
 Validated on Windows 11 x64 build 26200 with Rust 1.97.1, MSVC 14.44,
 Windows SDK and both Windows PowerShell 5.1 and PowerShell 7.
 

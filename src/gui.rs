@@ -326,11 +326,48 @@ unsafe extern "system" fn window_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM
     if pointer.is_null() {
         return DefWindowProcW(hwnd, msg, w, l);
     }
+    // Default processing of nonclient mouse/system commands synchronously sends
+    // WM_CLOSE (and other messages) back to this window. Do not hold a RefCell
+    // borrow across DefWindowProcW: that would make the nested close bypass our
+    // tray policy and destroy the window instead.
+    let taskbar_message = (*pointer).try_borrow().is_ok_and(|app| msg == app.taskbar);
+    if !taskbar_message
+        && !matches!(
+            msg,
+            WM_COMMAND
+                | runtime::STATUS_MESSAGE
+                | runtime::STOPPED_MESSAGE
+                | ACTIVATE
+                | WM_NOTIFY
+                | WM_APP12
+                | WM_SIZE
+                | DEFERRED_LAYOUT
+                | WM_VSCROLL
+                | WM_HSCROLL
+                | WM_MOUSEWHEEL
+                | WM_DPICHANGED
+                | WM_SETTINGCHANGE
+                | WM_THEMECHANGED
+                | WM_GETMINMAXINFO
+                | WM_CLOSE
+                | WM_QUERYENDSESSION
+                | WM_ENDSESSION
+                | WM_POWERBROADCAST
+                | WM_DISPLAYCHANGE
+                | TRAY
+        )
+    {
+        return DefWindowProcW(hwnd, msg, w, l);
+    }
     // Win32 synchronously reenters window procedures during control creation,
     // painting and resizing. Never alias a live mutable Rust reference.
     let Ok(mut app) = (*pointer).try_borrow_mut() else {
         if msg == WM_SIZE {
             PostMessageW(hwnd, WM_APP + 13, 0, 0);
+        }
+        if msg == WM_CLOSE {
+            PostMessageW(hwnd, WM_CLOSE, w, l);
+            return 0;
         }
         return DefWindowProcW(hwnd, msg, w, l);
     };
@@ -779,7 +816,7 @@ impl App {
         );
         self.button(4, "Open Log Directory", 604, 210, 325, 240);
         self.button(4, "Open Configuration Directory", 605, 470, 325, 300);
-        self.label(4,"Fullscreen Night Light 0.1.0\r\nWindows 11 x64 • Native Win32 interface\r\nMozilla Public License 2.0 (MPL-2.0)\r\nNo telemetry or network requirement.",610,395,130);
+        self.label(4,concat!("Fullscreen Night Light ", env!("CARGO_PKG_VERSION"), "\r\nWindows 11 x64 • Native Win32 interface\r\nMozilla Public License 2.0 (MPL-2.0)\r\nNo telemetry or network requirement."),610,395,130);
         self.button(4, "View MPL-2.0 License", 606, 210, 540, 260);
         self.fonts();
         self.sync_controls();

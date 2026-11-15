@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MPL-2.0
-param([switch]$Debug, [switch]$Test, [switch]$Check)
+param([switch]$Debug, [switch]$Test, [switch]$Check, [switch]$NoInstaller, [switch]$NoPortable)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
@@ -77,6 +77,18 @@ try {
     if (-not (Test-Path -LiteralPath $vswhere)) { throw 'Install Visual Studio Build Tools with Desktop development with C++ and a Windows SDK.' }
     $visualStudio = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
     if (-not $visualStudio) { throw 'MSVC x64 C++ build tools not found.' }
+    $nsis = $null
+    if (-not $NoInstaller) {
+        $nsisCommand = Get-Command makensis.exe -ErrorAction SilentlyContinue
+        if ($nsisCommand) { $nsis = $nsisCommand.Source }
+        else {
+            foreach ($base in @(${env:ProgramFiles(x86)}, $env:ProgramFiles)) {
+                $candidate = Join-Path $base 'NSIS\makensis.exe'
+                if (Test-Path -LiteralPath $candidate) { $nsis = $candidate; break }
+            }
+        }
+        if (-not $nsis) { throw 'NSIS 3 is required for the default installer output. Install NSIS from https://nsis.sourceforge.io/ or use -NoInstaller.' }
+    }
     Push-Location $repoRoot
     try {
         foreach ($path in @($targetRoot,$temporaryRoot,$ledgerPath,(Join-Path $repoRoot 'dist\windows\FullscreenNightLight'))) { Assert-LocalOutput $path }
@@ -108,28 +120,41 @@ try {
         Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\MANUAL-TESTS.md') -Destination (Join-Path $distribution 'MANUAL-TESTS.md') -Force
         $documentation = Join-Path $distribution 'docs'
         New-Item -ItemType Directory -Path $documentation -Force | Out-Null
-        foreach ($name in @('MANUAL-TESTS.md', 'VALIDATION.md', 'IMPLEMENTATION.md')) {
+        foreach ($name in @('MANUAL-TESTS.md', 'VALIDATION.md', 'IMPLEMENTATION.md', 'RELEASING.md')) {
             Copy-Item -LiteralPath (Join-Path $repoRoot "docs\$name") -Destination (Join-Path $documentation $name) -Force
         }
         Write-DependencyNotices (Join-Path $distribution 'THIRD-PARTY-NOTICES.txt')
         $zip = Join-Path $repoRoot 'dist\windows\FullscreenNightLight-portable.zip'
         $packageFiles = @('FullscreenNightLight.exe', 'README.md', 'LICENSE', 'config.example.toml', 'MANUAL-TESTS.md', 'THIRD-PARTY-NOTICES.txt') | ForEach-Object { Join-Path $distribution $_ }
-        $packageFiles += @('MANUAL-TESTS.md', 'VALIDATION.md', 'IMPLEMENTATION.md') | ForEach-Object { Join-Path $documentation $_ }
+        $packageFiles += @('MANUAL-TESTS.md', 'VALIDATION.md', 'IMPLEMENTATION.md', 'RELEASING.md') | ForEach-Object { Join-Path $documentation $_ }
         # Preserve relative links while packaging only explicitly named files.
-        Add-Type -AssemblyName System.IO.Compression.FileSystem
-        Add-Type -AssemblyName System.IO.Compression
-        $zipStream = [IO.File]::Open($zip, [IO.FileMode]::Create)
-        try {
-            $archive = New-Object IO.Compression.ZipArchive($zipStream, [IO.Compression.ZipArchiveMode]::Create, $true)
+        if (-not $NoPortable) {
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            Add-Type -AssemblyName System.IO.Compression
+            $zipStream = [IO.File]::Open($zip, [IO.FileMode]::Create)
             try {
-                foreach ($file in $packageFiles) {
-                    $entryName = $file.Substring($distribution.Length + 1).Replace('\', '/')
-                    [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $file, $entryName) | Out-Null
-                }
-            } finally { $archive.Dispose() }
-        } finally { $zipStream.Dispose() }
+                $archive = New-Object IO.Compression.ZipArchive($zipStream, [IO.Compression.ZipArchiveMode]::Create, $true)
+                try {
+                    foreach ($file in $packageFiles) {
+                        $entryName = $file.Substring($distribution.Length + 1).Replace('\', '/')
+                        [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $file, $entryName) | Out-Null
+                    }
+                } finally { $archive.Dispose() }
+            } finally { $zipStream.Dispose() }
+            Write-Host "Portable ZIP: $zip"
+        }
+        if (-not $NoInstaller) {
+            $rawMetadata = & cargo metadata --locked --no-deps --format-version 1
+            if ($LASTEXITCODE -ne 0) { throw 'Unable to read application version for installer' }
+            $metadata = ($rawMetadata -join "`n") | ConvertFrom-Json
+            $version = [string]($metadata.packages | Where-Object name -eq 'fullscreen-night-light').version
+            $numericVersion = ($version -split '-|\+')[0] + '.0'
+            $installer = Join-Path $repoRoot "dist\windows\FullscreenNightLight-$version-windows-x64-setup.exe"
+            & $nsis '/V2' "/DAPP_VERSION=$version" "/DWINDOWS_VERSION=$numericVersion" "/DPAYLOAD_DIR=$distribution" "/DINSTALLER_OUT=$installer" (Join-Path $repoRoot 'build-scripts\windows\installer.nsi')
+            if ($LASTEXITCODE -ne 0) { throw "NSIS installer compilation failed with exit code $LASTEXITCODE" }
+            Write-Host "Installer: $installer"
+        }
         Write-Host "Executable: $(Join-Path $distribution 'FullscreenNightLight.exe')"
-        Write-Host "Portable ZIP: $zip"
     } finally { Pop-Location }
 } catch {
     Write-Error -Message "Build failed: $($_.Exception.Message)" -ErrorAction Continue
