@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: MPL-2.0
+# Reference only: use the GUI; first launch seeds common application rules.
+version = 1
+enabled = true
+disable_in_fullscreen = true
+detection = "ForegroundOnly"
+occlusion = "AnyExposedArea"
+recovery = "NextFullscreenSession"
+include_ordinary = true
+include_browsers = true
+include_video = true
+include_maximized = false
+entry_ms = 500
+exit_ms = 750
+poll_ms = 500
+start_with_windows = false
+start_minimized = false
+close_to_tray = true
+diagnostic_logging = false
+
+[[applications]]
+executable = "firefox.exe"
+exact_path = false
+category = "Browser"
+excluded = false
