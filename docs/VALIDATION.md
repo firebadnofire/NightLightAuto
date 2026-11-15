@@ -46,8 +46,34 @@ PowerShell 5.1 build from `build-scripts/windows`. A mixed-separator file lookup
 failure was fixed by consistently using NSIS backslashes in the shared template;
 both native Windows and Ubuntu compilers now succeed. The native setup also passes
 7-Zip archive verification. Installer install/upgrade/uninstall remain untested.
-Actual Forgejo execution, production-key signing and both release API
-uploads await a real release tag; no public release or tag was pushed during tests.
+Production-key signing and both release API uploads remain untested; no public
+release or tag was pushed during these validation runs.
+
+## Remote runner cross-build validation (2026-11-14)
+
+The first tagged Forgejo job failed before checkout because the registered
+`ubuntu-latest` image is bare `ubuntu:24.04`, which lacks Node.js. The workflow now
+installs dependencies first and checks out the verified tag with shell Git commands.
+SDK downloads are restricted to x86_64 with `XWIN_ARCH`.
+
+The workflow's bootstrap, checkout, toolchain, validation and build scripts were
+executed on the opensuse-server runner host, in a disposable Ubuntu 24.04 container
+inside its existing runner Docker daemon (2 CPUs, 4 GiB RAM). This reproduced the
+Node-free environment without changing runner configuration or shared services.
+
+- All 14 release-tool tests passed; cross-target formatting/Clippy and release
+  compilation succeeded.
+- `v0.1.0` and a checkout-local `V0.1.0-remote.1` both produced versioned GUI EXEs,
+  portable ZIPs, NSIS installers and source ZIPs.
+- Each run verified five detached signatures using disposable test keys, all four
+  payload checksums and both ZIP archives. Production secrets were not accessed.
+- PE inspection confirmed AMD64, Windows GUI subsystem and system DLL imports.
+- Nonfatal compiler-family probe and missing Microsoft PDB warnings were emitted.
+
+Logs and test artifacts were retained separately from production release outputs.
+The test container was removed after collection. These were direct script runs,
+not a rerun of the hosted Forgejo job; release API publishing and Windows runtime
+execution were not exercised on this Linux host.
 
 Validated on Windows 11 x64 build 26200 with Rust 1.97.1, MSVC 14.44,
 Windows SDK and both Windows PowerShell 5.1 and PowerShell 7.

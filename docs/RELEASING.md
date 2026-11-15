@@ -35,8 +35,14 @@ The runner needs outbound HTTPS, APT privileges (root or passwordless sudo),
 Python 3.11+, git and sufficient space for LLVM and the Windows SDK. The job
 installs the pinned Rust toolchain and cargo-xwin 0.23.1, LLVM, NSIS and GnuPG.
 It builds **x86_64-pc-windows-msvc**, preserving the static CRT and native Win32 GUI.
+`XWIN_ARCH=x86_64` limits SDK downloads to the supported application architecture.
 There is no Linux application build. No Wine or Windows runner is required for
 compilation; Windows runtime tests remain a separate acceptance requirement.
+
+The job bootstraps its Ubuntu dependencies before checking out source. Checkout
+uses Git shell commands, so bare `ubuntu:24.04` runner images do not need Node.js
+or a JavaScript checkout action. The Forgejo token is supplied through temporary
+Git environment configuration, never stored in the remote URL or Git config.
 
 Both build paths reuse `build-scripts/windows/installer.nsi` and the same payload
 layout. Ubuntu orchestration is `build-scripts/windows/release.py`; the existing

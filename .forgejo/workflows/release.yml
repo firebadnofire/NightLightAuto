@@ -18,12 +18,8 @@ jobs:
       FORGEJO_REPOSITORY: ${{ forgejo.repository }}
       EXPECTED_SHA: ${{ forgejo.sha }}
       CARGO_TERM_COLOR: always
+      XWIN_ARCH: x86_64
     steps:
-      - name: Check out tagged source
-        uses: https://github.com/actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          fetch-depth: 0
-          persist-credentials: false
       - name: Install Ubuntu cross-build dependencies
         shell: bash
         run: |
@@ -35,6 +31,32 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y --no-install-recommends ca-certificates curl git python3 python3-venv clang llvm lld nsis gnupg
           fi
+      - name: Check out tagged source
+        shell: bash
+        env:
+          CHECKOUT_TOKEN: ${{ forgejo.token }}
+        run: |
+          set -euo pipefail
+          # Bare Ubuntu runner images have no Node runtime for actions/checkout.
+          # Bootstrap first, then use Git directly without persisting credentials.
+          git check-ref-format "refs/tags/$RELEASE_TAG"
+          case "$FORGEJO_SERVER_URL" in
+            https://*) ;;
+            *) printf '%s\n' 'Forgejo checkout requires HTTPS' >&2; exit 1 ;;
+          esac
+          export GIT_TERMINAL_PROMPT=0
+          git init .
+          git config remote.origin.url "$FORGEJO_SERVER_URL/$FORGEJO_REPOSITORY.git"
+          if [ -n "$CHECKOUT_TOKEN" ]; then
+            export GIT_CONFIG_COUNT=1
+            export GIT_CONFIG_KEY_0="http.$FORGEJO_SERVER_URL/.extraheader"
+            export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          fi
+          git fetch --no-tags origin "+refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          git checkout --detach "$EXPECTED_SHA"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$EXPECTED_SHA"
+          unset CHECKOUT_TOKEN GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
       - name: Install pinned Rust and cargo-xwin
         shell: bash
         run: |
